@@ -3,6 +3,7 @@ set -eu
 
 TARGET_DIR="${1:-/home/runner/work/CDA_Unifei/CDA_Unifei}"
 WOOF_DIR="${2:-}"
+EXCLUDED_TOKEN_REGEX="${EXCLUDED_TOKEN_REGEX:-^(printf|echo|mount|mkdir|while|until|return|switch_root|systemd|overlay|tmpfs|squashfs)$}"
 
 if [ -z "$WOOF_DIR" ] || [ ! -d "$WOOF_DIR" ]; then
   echo "uso: $0 <target-dir> <woof-ce-dir>" >&2
@@ -19,11 +20,11 @@ VAR_TOKENS="$TMP_DIR/vars.tokens"
 FLOW_LINES="$TMP_DIR/flows.tokens"
 MATCH_REPORT="$TMP_DIR/matches.report"
 
-awk '
+awk -v excluded_re="$EXCLUDED_TOKEN_REGEX" '
   {
     while (match($0, /[A-Za-z_][A-Za-z0-9_]{5,}/)) {
       tok=substr($0, RSTART, RLENGTH)
-      if (tok !~ /^(printf|echo|mount|mkdir|while|until|return|switch_root|systemd|overlay|tmpfs|squashfs)$/) {
+      if (tok !~ excluded_re) {
         print tok
       }
       $0=substr($0, RSTART+RLENGTH)

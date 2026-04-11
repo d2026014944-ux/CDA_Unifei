@@ -6,6 +6,8 @@ MESH_ID="${MESH_ID:-CDA-Mesh}"
 BAT_IFACE="${BAT_IFACE:-bat0}"
 # Frequência em MHz usada no join da malha (ex.: 2412 = canal 1 em 2.4 GHz).
 MESH_CHANNEL="${MESH_CHANNEL:-2412}"
+IP_OCTET_RANGE_START="${IP_OCTET_RANGE_START:-20}"
+IP_OCTET_RANGE_SIZE="${IP_OCTET_RANGE_SIZE:-200}"
 
 log() {
   printf '[cda-mesh] %s\n' "$*"
@@ -22,9 +24,8 @@ node_octet() {
   if [ -r /etc/machine-id ]; then
     hash="$(sha256sum /etc/machine-id | awk '{print $1}')"
     octet_hex="$(printf '%s' "$hash" | cut -c1-2)"
-    # Mantém IPs na faixa 10.42.0.20-219 para evitar conflitos com gateway,
-    # endereços reservados baixos e broadcast.
-    echo $((16#$octet_hex % 200 + 20))
+    # Faixa padrão 10.42.0.20-219 evita endereços baixos/reservados.
+    echo $((16#$octet_hex % IP_OCTET_RANGE_SIZE + IP_OCTET_RANGE_START))
   else
     echo 250
   fi

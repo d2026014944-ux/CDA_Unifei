@@ -3,7 +3,7 @@ set -eu
 
 WORKDIR="${WORKDIR:-/tmp/cda-mesh-lab}"
 BASE_DISK="${BASE_DISK:?defina BASE_DISK com a imagem qcow2 base}"
-KERNEL_IMAGE="${KERNEL_IMAGE:?defina KERNEL_IMAGE}" 
+KERNEL_IMAGE="${KERNEL_IMAGE:?defina KERNEL_IMAGE}"
 INITRD_IMAGE="${INITRD_IMAGE:?defina INITRD_IMAGE}"
 SSH_USER="${SSH_USER:-student}"
 SSH_KEY="${SSH_KEY:?defina SSH_KEY com chave privada para acesso SSH}"
@@ -71,13 +71,30 @@ assert_boot_media_policy() {
 
 assert_mesh_failover_with_dask() {
   vm3_ip="$(ssh_cmd 3 "ip -4 -o addr show dev bat0 | awk '{print \$4}' | cut -d/ -f1" | tr -d '\r')"
+  vm3_mac="$(ssh_cmd 3 "cat /sys/class/net/wlan0/address" | tr -d '\r')"
   [ -n "$vm3_ip" ] || {
     echo "falha ao determinar o IP da VM-3 na interface bat0" >&2
     return 1
   }
+  [ -n "$vm3_mac" ] || {
+    echo "falha ao determinar o MAC da VM-3 na interface wlan0" >&2
+    return 1
+  }
 
-  ssh_cmd 1 "sudo iptables -A OUTPUT -d $vm3_ip -j DROP"
+  ssh_cmd 1 "sudo ebtables -A OUTPUT -o wlan0 -d $vm3_mac -j DROP"
   ssh_cmd 3 "nohup dask-scheduler --host $vm3_ip --port 8786 >/tmp/dask-scheduler.log 2>&1 &"
+  ssh_cmd 1 "python3 - <<PY
+import socket, time
+for _ in range(30):
+    try:
+        s = socket.create_connection(('$vm3_ip', 8786), timeout=1)
+        s.close()
+        break
+    except OSError:
+        time.sleep(1)
+else:
+    raise SystemExit('scheduler indisponível')
+PY"
   ssh_cmd 1 "python3 - <<PY
 from dask.distributed import Client
 c = Client('tcp://$vm3_ip:8786')
