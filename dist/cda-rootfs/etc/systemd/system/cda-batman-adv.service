@@ -1,0 +1,15 @@
+[Unit]
+Description=Configura rede mesh CDA com batman-adv
+Wants=network-pre.target
+After=systemd-modules-load.service network-pre.target
+Before=network.target
+
+[Service]
+Type=oneshot
+Environment=MESH_IFACE=wlan0
+Environment=MESH_ID=CDA-Mesh
+ExecStart=/usr/local/sbin/cda-mesh-setup.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

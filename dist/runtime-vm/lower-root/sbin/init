@@ -1,0 +1,39 @@
+#!/bin/sh
+set -eu
+
+mount -t proc proc /proc || true
+mount -t sysfs sys /sys || true
+mount -t devtmpfs dev /dev || true
+mount -t tmpfs tmpfs /tmp || true
+
+setup_network() {
+  ip link set lo up || true
+  for netdev in /sys/class/net/*; do
+    name="$(basename "$netdev")"
+    [ "$name" = "lo" ] && continue
+    ip link set "$name" up || true
+    ip addr add 10.0.2.15/24 dev "$name" 2>/dev/null || true
+    ip route add default via 10.0.2.2 dev "$name" 2>/dev/null || true
+    break
+  done
+}
+
+setup_network
+
+MODE="unknown"
+if [ -r /run/cda/boot-mode ]; then
+  MODE="$(cat /run/cda/boot-mode)"
+fi
+
+cat > /www/index.html <<HTML
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>CDA Linux OS</title></head>
+<body style="font-family: sans-serif; background:#0b1220; color:#e5e7eb; padding:2rem;">
+<h1>CDA Linux OS em execucao</h1>
+<p>Boot mode: <b>${MODE}</b></p>
+<p>Kernel: <b>$(uname -r)</b></p>
+<p>Este conteudo vem de dentro da VM QEMU do sistema operacional.</p>
+</body></html>
+HTML
+
+/bin/httpd -f -p 8080 -h /www

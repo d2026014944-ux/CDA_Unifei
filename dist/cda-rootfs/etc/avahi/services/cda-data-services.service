@@ -1,0 +1,19 @@
+<?xml version="1.0" standalone='no'?><!--*-nxml-*-->
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<service-group>
+  <name replace-wildcards="yes">%h CDA Services</name>
+
+  <service>
+    <type>_jupyter._tcp</type>
+    <port>8888</port>
+    <txt-record>path=/</txt-record>
+    <txt-record>stack=jupyter</txt-record>
+  </service>
+
+  <service>
+    <type>_dask._tcp</type>
+    <port>8786</port>
+    <txt-record>role=scheduler</txt-record>
+    <txt-record>stack=dask</txt-record>
+  </service>
+</service-group>

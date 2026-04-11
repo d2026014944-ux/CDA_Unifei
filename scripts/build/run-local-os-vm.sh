@@ -1,0 +1,763 @@
+#!/bin/sh
+set -eu
+
+ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+RUNTIME_DIR="$ROOT_DIR/dist/runtime-vm"
+WORK_DIR="$RUNTIME_DIR/work"
+ROOTFS_DIR="$WORK_DIR/rootfs"
+INITRAMFS_DIR="$WORK_DIR/initramfs"
+BASE_SQUASH="$WORK_DIR/base.squashfs"
+PID_FILE="$RUNTIME_DIR/qemu.pid"
+LOG_FILE="$RUNTIME_DIR/qemu.log"
+KERNEL_IMAGE="$RUNTIME_DIR/vmlinuz"
+INITRD_IMAGE="$RUNTIME_DIR/initrd.img"
+
+mkdir -p "$RUNTIME_DIR" "$WORK_DIR"
+sudo rm -rf "$ROOTFS_DIR" "$INITRAMFS_DIR"
+mkdir -p \
+  "$ROOTFS_DIR/bin" \
+  "$ROOTFS_DIR/sbin" \
+  "$ROOTFS_DIR/proc" \
+  "$ROOTFS_DIR/sys" \
+  "$ROOTFS_DIR/dev" \
+  "$ROOTFS_DIR/run" \
+  "$ROOTFS_DIR/tmp" \
+  "$ROOTFS_DIR/www" \
+  "$ROOTFS_DIR/bootlayers"
+
+cp /usr/bin/busybox "$ROOTFS_DIR/bin/busybox"
+for app in sh mount mkdir cat echo sleep awk sort find stat cp ip httpd uname hostname basename; do
+  ln -sf /bin/busybox "$ROOTFS_DIR/bin/$app"
+done
+
+cat > "$ROOTFS_DIR/sbin/init" <<'INIT'
+#!/bin/sh
+set -eu
+
+mount -t proc proc /proc || true
+mount -t sysfs sys /sys || true
+mount -t devtmpfs dev /dev || true
+
+# /run e movido do initramfs por switch_root; nao remonte para preservar /run/cda/boot-mode.
+mkdir -p /run/cda /tmp
+mount -t tmpfs tmpfs /tmp || true
+
+MODE="unknown"
+[ -r /run/cda/boot-mode ] && MODE="$(cat /run/cda/boot-mode)"
+KERNEL="$(uname -r)"
+
+ip link set lo up || true
+for netdev in /sys/class/net/*; do
+  name="$(basename "$netdev")"
+  [ "$name" = "lo" ] && continue
+  ip link set "$name" up || true
+  ip addr add 10.0.2.15/24 dev "$name" 2>/dev/null || true
+  ip route add default via 10.0.2.2 dev "$name" 2>/dev/null || true
+  break
+done
+
+cat > /www/index.html <<'HTML'
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CDA Neural Deck</title>
+  <style>
+    :root {
+      --bg-0: #060b17;
+      --bg-1: #0a1122;
+      --bg-2: #111d36;
+      --panel: rgba(12, 20, 38, 0.86);
+      --panel-soft: rgba(16, 28, 52, 0.7);
+      --line: rgba(123, 159, 216, 0.2);
+      --line-strong: rgba(98, 200, 255, 0.42);
+      --txt: #e8f0ff;
+      --muted: #9bb0cf;
+      --accent-a: #54d8ff;
+      --accent-b: #4f8cff;
+      --accent-c: #37f4b9;
+      --shadow: 0 22px 58px rgba(0, 0, 0, 0.52);
+      --shadow-strong: 0 34px 84px rgba(0, 0, 0, 0.65);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+      font-family: "Space Grotesk", "Exo 2", "Fira Sans Condensed", sans-serif;
+      color: var(--txt);
+      background: var(--bg-0);
+    }
+
+    body {
+      overflow: hidden;
+      line-height: 1.45;
+      letter-spacing: 0.01em;
+    }
+
+    @keyframes drift {
+      0% { transform: translate3d(0, 0, 0) scale(1); }
+      50% { transform: translate3d(12px, -8px, 0) scale(1.04); }
+      100% { transform: translate3d(0, 0, 0) scale(1); }
+    }
+
+    @keyframes rise {
+      from { transform: translateY(14px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(84, 216, 255, 0.42); }
+      50% { box-shadow: 0 0 0 7px rgba(84, 216, 255, 0.08); }
+    }
+
+    .deck {
+      position: relative;
+      min-height: 100vh;
+      background:
+        radial-gradient(880px 520px at 8% 8%, rgba(79, 140, 255, 0.2), transparent 58%),
+        radial-gradient(740px 440px at 96% 0%, rgba(84, 216, 255, 0.2), transparent 50%),
+        radial-gradient(820px 540px at 50% 100%, rgba(55, 244, 185, 0.1), transparent 55%),
+        linear-gradient(150deg, var(--bg-0) 0%, var(--bg-1) 50%, #0b1429 100%);
+    }
+
+    .deck::before,
+    .deck::after {
+      content: "";
+      position: absolute;
+      border-radius: 999px;
+      filter: blur(28px);
+      opacity: 0.56;
+      pointer-events: none;
+      animation: drift 14s ease-in-out infinite;
+    }
+
+    .deck::before {
+      width: 320px;
+      height: 320px;
+      top: 80px;
+      right: 120px;
+      background: radial-gradient(circle, rgba(84, 216, 255, 0.32), transparent 72%);
+    }
+
+    .deck::after {
+      width: 260px;
+      height: 260px;
+      bottom: 130px;
+      left: 180px;
+      background: radial-gradient(circle, rgba(79, 140, 255, 0.26), transparent 72%);
+      animation-delay: 2s;
+    }
+
+    .hud {
+      position: fixed;
+      z-index: 30;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      background: linear-gradient(180deg, rgba(7, 13, 25, 0.95), rgba(7, 13, 25, 0.8));
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(22px);
+    }
+
+    .brandline {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 0.94rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    .pulse-dot {
+      width: 13px;
+      height: 13px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, var(--accent-a), var(--accent-b));
+      animation: pulse 2.4s ease-in-out infinite;
+    }
+
+    .hud-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 0.87rem;
+      white-space: nowrap;
+    }
+
+    .hud-chip {
+      padding: 7px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: rgba(18, 31, 55, 0.62);
+    }
+
+    .workspace {
+      position: relative;
+      z-index: 6;
+      display: grid;
+      grid-template-columns: 240px minmax(0, 1fr) 320px;
+      gap: 16px;
+      padding: 82px 18px 96px;
+      min-height: 100vh;
+    }
+
+    .card,
+    .window {
+      border: 1px solid var(--line);
+      background: linear-gradient(155deg, var(--panel) 0%, var(--panel-soft) 100%);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      animation: rise .46s ease both;
+    }
+
+    .card-head,
+    .window-head {
+      padding: 14px 15px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      background: linear-gradient(90deg, rgba(84, 216, 255, 0.09), rgba(79, 140, 255, 0.06));
+    }
+
+    .card-title,
+    .window-title {
+      font-weight: 700;
+      font-size: 0.9rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .card-body,
+    .window-body {
+      padding: 15px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 11px;
+      border-radius: 999px;
+      border: 1px solid rgba(84, 216, 255, 0.32);
+      background: rgba(84, 216, 255, 0.12);
+      color: #b9e9ff;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .shortcut-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .shortcut {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: linear-gradient(155deg, rgba(84, 216, 255, 0.09), rgba(79, 140, 255, 0.08));
+      color: var(--txt);
+      border-radius: 14px;
+      padding: 12px 10px;
+      cursor: pointer;
+      display: grid;
+      gap: 7px;
+      justify-items: center;
+      text-align: center;
+      transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+    }
+
+    .shortcut:hover {
+      transform: translateY(-2px);
+      border-color: var(--line-strong);
+      box-shadow: 0 10px 20px rgba(18, 36, 72, 0.45);
+    }
+
+    .shortcut-glyph {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      font-size: 1rem;
+      background: rgba(8, 18, 36, 0.64);
+      border: 1px solid rgba(84, 216, 255, 0.3);
+    }
+
+    .shortcut-title {
+      font-size: 0.84rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+
+    .shortcut-desc {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    .stage {
+      position: relative;
+      min-height: calc(100vh - 186px);
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01));
+      overflow: hidden;
+    }
+
+    .stage-grid {
+      position: relative;
+      min-height: 100%;
+      padding: 14px;
+    }
+
+    .window {
+      position: absolute;
+      min-width: 280px;
+      max-width: 680px;
+      min-height: 170px;
+      transition: box-shadow .2s ease, transform .2s ease;
+    }
+
+    .window.active {
+      box-shadow: var(--shadow-strong);
+      border-color: var(--line-strong);
+    }
+
+    .window pre {
+      margin: 0;
+      font-family: "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 0.8rem;
+      line-height: 1.55;
+      color: #cde7ff;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .metrics {
+      display: grid;
+      gap: 10px;
+    }
+
+    .metric {
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(11, 21, 39, 0.72);
+      border: 1px solid var(--line);
+    }
+
+    .metric label {
+      display: block;
+      font-size: 0.71rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-bottom: 6px;
+    }
+
+    .metric strong {
+      font-size: 0.98rem;
+      color: #dff2ff;
+    }
+
+    .right-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .status-pill {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 10px;
+      align-items: center;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(15, 27, 49, 0.66);
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--accent-c);
+      animation: pulse 2.1s ease-in-out infinite;
+    }
+
+    .dock {
+      position: fixed;
+      left: 50%;
+      bottom: 12px;
+      transform: translateX(-50%);
+      z-index: 40;
+      width: min(980px, calc(100vw - 24px));
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: linear-gradient(90deg, rgba(8, 16, 31, 0.9), rgba(10, 19, 38, 0.84));
+      backdrop-filter: blur(20px);
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 14px;
+      padding: 10px 12px;
+      box-shadow: var(--shadow);
+    }
+
+    .dock-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+    }
+
+    .dock-btn {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(17, 31, 54, 0.86);
+      color: var(--txt);
+      font: inherit;
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 9px 12px;
+      cursor: pointer;
+      transition: background .2s ease, border-color .2s ease;
+    }
+
+    .dock-btn:hover {
+      background: rgba(26, 45, 77, 0.95);
+      border-color: var(--line-strong);
+    }
+
+    .clock {
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: #d9ecff;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .no-select {
+      user-select: none;
+    }
+
+    @media (max-width: 1200px) {
+      .workspace {
+        grid-template-columns: 1fr;
+      }
+
+      .stage {
+        min-height: 680px;
+      }
+
+      .window {
+        position: relative;
+        margin-bottom: 12px;
+        max-width: none;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .hud {
+        height: auto;
+        padding: 10px 12px;
+        gap: 8px;
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .hud-meta {
+        width: 100%;
+        overflow-x: auto;
+      }
+
+      .workspace {
+        padding-top: 116px;
+        gap: 12px;
+      }
+
+      .dock {
+        width: calc(100vw - 16px);
+        bottom: 8px;
+        grid-template-columns: 1fr;
+        justify-items: start;
+      }
+
+      .clock {
+        justify-self: end;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="deck">
+    <header class="hud no-select">
+      <div class="brandline">
+        <span class="pulse-dot"></span>
+        <span>CDA Neural Deck</span>
+      </div>
+      <div class="hud-meta">
+        <span class="hud-chip" id="boot-state">boot __MODE__</span>
+        <span class="hud-chip">kernel __KERNEL__</span>
+        <span class="hud-chip" id="clock">--:--:--</span>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="card">
+        <div class="card-head">
+          <div class="card-title">Launcher</div>
+          <div class="tag">sessao local</div>
+        </div>
+        <div class="card-body">
+          <div class="shortcut-grid">
+            <button class="shortcut" data-open="window-system">
+              <div class="shortcut-glyph">SYS</div>
+              <div class="shortcut-title">Sistema</div>
+              <div class="shortcut-desc">boot, kernel, runtime</div>
+            </button>
+            <button class="shortcut" data-open="window-files">
+              <div class="shortcut-glyph">FS</div>
+              <div class="shortcut-title">Arquivos</div>
+              <div class="shortcut-desc">layout da distro</div>
+            </button>
+            <button class="shortcut" data-open="window-terminal">
+              <div class="shortcut-glyph">SH</div>
+              <div class="shortcut-title">Terminal</div>
+              <div class="shortcut-desc">console do sistema</div>
+            </button>
+            <button class="shortcut" data-open="window-mesh">
+              <div class="shortcut-glyph">NET</div>
+              <div class="shortcut-title">Mesh</div>
+              <div class="shortcut-desc">batman-adv e avahi</div>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="stage card">
+        <div class="card-head">
+          <div class="card-title">Area de Comando</div>
+          <div class="tag">CDA Linux OS</div>
+        </div>
+        <div class="stage-grid">
+          <div class="window active" id="window-system" style="top: 12px; left: 14px; width: 360px;">
+            <div class="window-head"><div class="window-title">Sistema</div><div class="tag">online</div></div>
+            <div class="window-body">
+              <div class="metrics">
+                <div class="metric"><label>Boot mode</label><strong>__MODE__</strong></div>
+                <div class="metric"><label>Kernel</label><strong>__KERNEL__</strong></div>
+                <div class="metric"><label>Origem</label><strong>QEMU + initramfs OverlayFS</strong></div>
+                <div class="metric"><label>Canal</label><strong>Live local em VM</strong></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="window" id="window-terminal" style="top: 80px; left: 320px; width: 540px;">
+            <div class="window-head"><div class="window-title">Terminal</div><div class="tag">/bin/sh</div></div>
+            <div class="window-body">
+              <pre id="termOut">cda@localhost:~$ uname -a
+Linux __KERNEL__
+
+cda@localhost:~$ cat /run/cda/boot-mode
+__MODE__
+
+cda@localhost:~$ mount | grep overlay
+overlay on /sysroot type overlay (rw,relatime,...)
+
+cda@localhost:~$ echo ready
+ready</pre>
+            </div>
+          </div>
+
+          <div class="window" id="window-files" style="top: 252px; left: 78px; width: 460px;">
+            <div class="window-head"><div class="window-title">Arquivos</div><div class="tag">rootfs</div></div>
+            <div class="window-body">
+              <pre>boot/
+etc/
+proc/
+sys/
+usr/
+var/
+www/
+
+/usr/share/cda/CLAUDE.MD
+/etc/avahi/services/cda-data-services.service
+/usr/local/sbin/cda-mesh-setup.sh</pre>
+            </div>
+          </div>
+
+          <div class="window" id="window-mesh" style="top: 220px; right: 20px; width: 360px;">
+            <div class="window-head"><div class="window-title">Mesh</div><div class="tag">CDA-Mesh</div></div>
+            <div class="window-body">
+              <div class="metrics">
+                <div class="metric"><label>batman-adv</label><strong>pronto para ativacao</strong></div>
+                <div class="metric"><label>Avahi</label><strong>_jupyter._tcp / _dask._tcp</strong></div>
+                <div class="metric"><label>Distribuicao</label><strong>layout academico em construcao</strong></div>
+                <div class="metric"><label>Topologia</label><strong>laboratorio em malha</strong></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div class="card-title">Telemetria</div>
+          <div class="tag">live</div>
+        </div>
+        <div class="card-body">
+          <div class="right-stack">
+            <div class="status-pill"><span class="dot"></span><span>SO em execucao dentro da VM</span></div>
+            <div class="metric"><label>Servico</label><strong>host 10080 -> guest 8080</strong></div>
+            <div class="metric"><label>Pipeline</label><strong>squashfs + initramfs + overlay</strong></div>
+            <div class="metric"><label>Objetivo</label><strong>sistema academico de ciencia de dados</strong></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div class="dock no-select">
+      <div class="dock-buttons">
+        <button class="dock-btn" data-open="window-system">Sistema</button>
+        <button class="dock-btn" data-open="window-terminal">Terminal</button>
+        <button class="dock-btn" data-open="window-files">Arquivos</button>
+        <button class="dock-btn" data-open="window-mesh">Mesh</button>
+      </div>
+      <div class="clock" id="dock-clock">--:--:--</div>
+    </div>
+  </div>
+
+  <script>
+    const windows = Array.from(document.querySelectorAll('.window'));
+    let order = 20;
+
+    function setClock() {
+      const now = new Date();
+      const value = now.toLocaleTimeString('pt-BR', { hour12: false });
+      document.getElementById('clock').textContent = value;
+      document.getElementById('dock-clock').textContent = value;
+    }
+
+    function bringToFront(windowEl) {
+      order += 1;
+      windowEl.style.zIndex = String(order);
+      windows.forEach((w) => w.classList.remove('active'));
+      windowEl.classList.add('active');
+    }
+
+    function openWindow(id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.style.display = 'block';
+      bringToFront(el);
+    }
+
+    document.querySelectorAll('[data-open]').forEach((button) => {
+      button.addEventListener('click', () => openWindow(button.getAttribute('data-open')));
+    });
+
+    windows.forEach((windowEl, index) => {
+      windowEl.addEventListener('click', () => bringToFront(windowEl));
+      windowEl.style.zIndex = String(20 + index);
+    });
+
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === '1') openWindow('window-system');
+      if (ev.key === '2') openWindow('window-terminal');
+      if (ev.key === '3') openWindow('window-files');
+      if (ev.key === '4') openWindow('window-mesh');
+    });
+
+    setClock();
+    setInterval(setClock, 1000);
+  </script>
+</body>
+</html>
+HTML
+
+sed -i "s|__MODE__|$MODE|g; s|__KERNEL__|$KERNEL|g" /www/index.html
+
+exec /bin/httpd -f -p 8080 -h /www
+INIT
+chmod +x "$ROOTFS_DIR/sbin/init"
+
+mksquashfs "$ROOTFS_DIR" "$BASE_SQUASH" -noappend -comp xz >/dev/null
+
+STOCK_INITRD="$(ls /boot/initrd.img-* | sort | tail -n 1)"
+KERNEL_VER="$(basename "$STOCK_INITRD" | sed 's/^initrd.img-//')"
+sudo rm -rf "$INITRAMFS_DIR"
+mkdir -p "$INITRAMFS_DIR"
+sudo unmkinitramfs "$STOCK_INITRD" "$INITRAMFS_DIR/unpacked" >/dev/null
+sudo chown -R "$(id -u)":"$(id -g)" "$INITRAMFS_DIR/unpacked"
+
+if [ -d "$INITRAMFS_DIR/unpacked/main" ]; then
+  INITRAMFS_MAIN="$INITRAMFS_DIR/unpacked/main"
+else
+  INITRAMFS_MAIN="$INITRAMFS_DIR/unpacked"
+fi
+
+cp "$ROOT_DIR/initramfs/init-overlay.sh" "$INITRAMFS_MAIN/init"
+chmod +x "$INITRAMFS_MAIN/init"
+mkdir -p "$INITRAMFS_MAIN/bootlayers"
+cp "$BASE_SQUASH" "$INITRAMFS_MAIN/bootlayers/base.squashfs"
+
+for module_path in \
+  "/lib/modules/$KERNEL_VER/kernel/fs/overlayfs/overlay.ko.zst" \
+  "/lib/modules/$KERNEL_VER/kernel/fs/squashfs/squashfs.ko.zst" \
+  "/lib/modules/$KERNEL_VER/kernel/drivers/block/loop.ko.zst"; do
+  if [ -r "$module_path" ]; then
+    relative_path="${module_path#/lib/modules/$KERNEL_VER/}"
+    target_dir="$INITRAMFS_MAIN/usr/lib/modules/$KERNEL_VER/$(dirname "$relative_path")"
+    mkdir -p "$target_dir"
+    cp "$module_path" "$target_dir/"
+  fi
+done
+
+depmod -b "$INITRAMFS_MAIN" "$KERNEL_VER" >/dev/null 2>&1 || true
+
+(
+  cd "$INITRAMFS_MAIN"
+  find . -print0 | cpio --null -ov --format=newc 2>/dev/null | gzip -9 > "$RUNTIME_DIR/initramfs.cpio.gz"
+)
+
+if [ ! -r "$KERNEL_IMAGE" ]; then
+  sudo install -m 0644 "$(ls /boot/vmlinuz-* | sort | tail -n 1)" "$KERNEL_IMAGE"
+fi
+
+if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+  kill "$(cat "$PID_FILE")" || true
+fi
+
+qemu-system-x86_64 \
+  -name cda-linux-os \
+  -m 4096 \
+  -smp 2 \
+  -kernel "$KERNEL_IMAGE" \
+  -initrd "$RUNTIME_DIR/initramfs.cpio.gz" \
+  -append "console=ttyS0 cda.squashdir=/bootlayers cda.force_ram=1" \
+  -nic user,model=virtio-net-pci,hostfwd=tcp::10080-:8080 \
+  -nographic > "$LOG_FILE" 2>&1 &
+
+echo $! > "$PID_FILE"
+
+echo "[ok] VM iniciada"
+echo "PID: $(cat "$PID_FILE")"
+echo "Log: $LOG_FILE"
+echo "Acesso: http://127.0.0.1:10080"

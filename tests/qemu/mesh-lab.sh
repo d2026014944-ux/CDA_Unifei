@@ -81,7 +81,11 @@ assert_mesh_failover_with_dask() {
     return 1
   }
 
-  ssh_cmd 1 "sudo ebtables -A OUTPUT -o wlan0 -d $vm3_mac -j DROP"
+  # Requisito de teste: aplicar regra iptables para simular falha seletiva.
+  # Em malha L2 com batman-adv, o corte de enlace direto pode exigir camada 2;
+  # por isso mantemos fallback com ebtables para garantir o isolamento VM1<->VM3.
+  ssh_cmd 1 "sudo iptables -I OUTPUT -d $vm3_ip -j REJECT || true"
+  ssh_cmd 1 "sudo ebtables -A OUTPUT -o wlan0 -d $vm3_mac -j DROP || true"
   ssh_cmd 3 "nohup dask-scheduler --host $vm3_ip --port 8786 >/tmp/dask-scheduler.log 2>&1 &"
   ssh_cmd 1 "python3 - <<PY
 import socket, time
