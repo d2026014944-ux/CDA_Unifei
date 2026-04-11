@@ -36,6 +36,7 @@ grep -hE '^[[:space:]]*(if|elif|case|while|for)[[:space:]]' $(cat "$SCRIPT_LIST"
 : > "$MATCH_REPORT"
 
 while IFS= read -r token; do
+  # Limite >=8 reduz falso positivo de identificadores curtos/genéricos.
   [ "${#token}" -ge 8 ] || continue
   grep -Rnw -- "$token" "$WOOF_DIR" >> "$MATCH_REPORT" || true
 done < "$VAR_TOKENS"

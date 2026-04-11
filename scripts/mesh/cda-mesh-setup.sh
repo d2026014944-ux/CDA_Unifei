@@ -21,6 +21,8 @@ node_octet() {
   if [ -r /etc/machine-id ]; then
     hash="$(sha256sum /etc/machine-id | awk '{print $1}')"
     octet_hex="$(printf '%s' "$hash" | cut -c1-2)"
+    # Mantém IPs na faixa 10.42.0.20-219 para evitar conflitos com gateway,
+    # endereços reservados baixos e broadcast.
     echo $((16#$octet_hex % 200 + 20))
   else
     echo 250

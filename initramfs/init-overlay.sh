@@ -138,6 +138,8 @@ main() {
     mode="disk"
   elif [ "$force_ram" = "1" ]; then
     mode="ram"
+  # Política: manter pelo menos 2x o tamanho total dos squashfs para cobrir
+  # cópia para tmpfs + folga operacional do sistema durante o boot.
   elif [ "$mem_available_mib" -ge "$ram_min_mib" ] && [ "$mem_available_bytes" -ge $((total_squash_bytes * 2)) ]; then
     mode="ram"
   fi
