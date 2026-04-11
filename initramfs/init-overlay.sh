@@ -103,7 +103,7 @@ mount_lower_layers() {
 
 mount_overlay_root() {
   lowerdir="$1"
-  mkdir -p /run/cda/rw/upper /run/cda/rw/work /sysroot
+  mkdir -p /sysroot
   mount -t tmpfs tmpfs /run/cda/rw
   mkdir -p /run/cda/rw/upper /run/cda/rw/work
   mount -t overlay overlay -o "lowerdir=$lowerdir,upperdir=/run/cda/rw/upper,workdir=/run/cda/rw/work" /sysroot

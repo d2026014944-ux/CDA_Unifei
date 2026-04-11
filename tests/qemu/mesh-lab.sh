@@ -78,7 +78,7 @@ assert_mesh_failover_with_dask() {
 
   ssh_cmd 1 "sudo iptables -A OUTPUT -d $vm3_ip -j DROP"
   ssh_cmd 3 "nohup dask-scheduler --host $vm3_ip --port 8786 >/tmp/dask-scheduler.log 2>&1 &"
-  ssh_cmd 1 "python3 - <<'PY'
+  ssh_cmd 1 "python3 - <<PY
 from dask.distributed import Client
 c = Client('tcp://$vm3_ip:8786')
 future = c.submit(lambda x: x * 2, 21)

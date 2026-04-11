@@ -4,6 +4,7 @@ set -eu
 MESH_IFACE="${MESH_IFACE:-wlan0}"
 MESH_ID="${MESH_ID:-CDA-Mesh}"
 BAT_IFACE="${BAT_IFACE:-bat0}"
+# Frequência em MHz usada no join da malha (ex.: 2412 = canal 1 em 2.4 GHz).
 MESH_CHANNEL="${MESH_CHANNEL:-2412}"
 
 log() {
