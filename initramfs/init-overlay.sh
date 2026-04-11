@@ -1,0 +1,159 @@
+#!/bin/sh
+set -eu
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+
+log() {
+  printf '[init-overlay] %s\n' "$*"
+}
+
+panic() {
+  printf '[init-overlay][panic] %s\n' "$*" >&2
+  exec sh
+}
+
+cmdline_get() {
+  key="$1"
+  for arg in $(cat /proc/cmdline); do
+    case "$arg" in
+      "$key"=*)
+        printf '%s\n' "${arg#*=}"
+        return 0
+        ;;
+    esac
+  done
+  return 1
+}
+
+mount_api_fs() {
+  mount -t proc proc /proc 2>/dev/null || true
+  mount -t sysfs sys /sys 2>/dev/null || true
+  mount -t devtmpfs dev /dev 2>/dev/null || true
+}
+
+find_mem_available_bytes() {
+  value="$(awk '/^MemAvailable:/ { print $2; found=1; exit } END { if (!found) print 0 }' /proc/meminfo)"
+  [ "$value" -gt 0 ] || value="$(awk '/^MemTotal:/ { print $2; found=1; exit } END { if (!found) print 0 }' /proc/meminfo)"
+  echo $((value * 1024))
+}
+
+sum_squashfs_bytes() {
+  find "$1" -maxdepth 1 -type f -name '*.squashfs' -print0 | xargs -0 stat -c '%s' 2>/dev/null | awk '{s+=$1} END {print s+0}'
+}
+
+mount_boot_source() {
+  mkdir -p /run/cda/boot
+  source_dir="$(cmdline_get cda.squashdir || true)"
+  if [ -n "$source_dir" ] && [ -d "$source_dir" ]; then
+    echo "$source_dir"
+    return 0
+  fi
+
+  root_dev="$(cmdline_get root || true)"
+  live_dev="$(cmdline_get cda.live_dev || true)"
+
+  for dev in "$live_dev" "$root_dev"; do
+    [ -n "$dev" ] || continue
+    if mount -o ro "$dev" /run/cda/boot 2>/dev/null; then
+      inner="$(cmdline_get cda.squash_subdir || true)"
+      if [ -n "$inner" ] && [ -d "/run/cda/boot/$inner" ]; then
+        echo "/run/cda/boot/$inner"
+      else
+        echo "/run/cda/boot"
+      fi
+      return 0
+    fi
+  done
+
+  panic "não foi possível montar o dispositivo com os arquivos .squashfs"
+}
+
+copy_images_to_ram() {
+  src_dir="$1"
+  total_bytes="$2"
+  mkdir -p /run/cda/images
+  overhead=$((256 * 1024 * 1024))
+  size=$((total_bytes + overhead))
+  mount -t tmpfs -o "size=$size" tmpfs /run/cda/images
+  find "$src_dir" -maxdepth 1 -type f -name '*.squashfs' -print0 | xargs -0 -I{} cp -f "{}" /run/cda/images/
+  echo /run/cda/images
+}
+
+mount_lower_layers() {
+  src_dir="$1"
+  mkdir -p /run/cda/lower
+  i=0
+  lowerdir=""
+
+  for img in $(find "$src_dir" -maxdepth 1 -type f -name '*.squashfs' | sort); do
+    i=$((i + 1))
+    layer="/run/cda/lower/$i"
+    mkdir -p "$layer"
+    mount -t squashfs -o loop,ro "$img" "$layer"
+    if [ -z "$lowerdir" ]; then
+      lowerdir="$layer"
+    else
+      lowerdir="$layer:$lowerdir"
+    fi
+  done
+
+  [ "$i" -gt 0 ] || panic "nenhuma imagem .squashfs encontrada"
+  echo "$lowerdir"
+}
+
+mount_overlay_root() {
+  lowerdir="$1"
+  mkdir -p /run/cda/rw/upper /run/cda/rw/work /sysroot
+  mount -t tmpfs tmpfs /run/cda/rw
+  mkdir -p /run/cda/rw/upper /run/cda/rw/work
+  mount -t overlay overlay -o "lowerdir=$lowerdir,upperdir=/run/cda/rw/upper,workdir=/run/cda/rw/work" /sysroot
+}
+
+switch_to_real_root() {
+  mkdir -p /sysroot/proc /sysroot/sys /sysroot/dev /sysroot/run
+  mount --move /proc /sysroot/proc || true
+  mount --move /sys /sysroot/sys || true
+  mount --move /dev /sysroot/dev || true
+  mount --move /run /sysroot/run || true
+  exec switch_root /sysroot /sbin/init
+}
+
+main() {
+  mount_api_fs
+  mkdir -p /run/cda
+
+  ram_min_mib="$(cmdline_get cda.ram_min_mib || true)"
+  [ -n "$ram_min_mib" ] || ram_min_mib=4096
+
+  force_disk="$(cmdline_get cda.force_disk || true)"
+  force_ram="$(cmdline_get cda.force_ram || true)"
+
+  squash_source="$(mount_boot_source)"
+  total_squash_bytes="$(sum_squashfs_bytes "$squash_source")"
+  mem_available_bytes="$(find_mem_available_bytes)"
+  mem_available_mib=$((mem_available_bytes / 1024 / 1024))
+
+  mode="disk"
+  if [ "$force_disk" = "1" ]; then
+    mode="disk"
+  elif [ "$force_ram" = "1" ]; then
+    mode="ram"
+  elif [ "$mem_available_mib" -ge "$ram_min_mib" ] && [ "$mem_available_bytes" -ge $((total_squash_bytes * 2)) ]; then
+    mode="ram"
+  fi
+
+  log "modo de boot: $mode (MemAvailable=${mem_available_mib}MiB, squashfs=$((total_squash_bytes / 1024 / 1024))MiB)"
+  echo "$mode" > /run/cda/boot-mode
+
+  if [ "$mode" = "ram" ]; then
+    lower_source="$(copy_images_to_ram "$squash_source" "$total_squash_bytes")"
+  else
+    lower_source="$squash_source"
+  fi
+
+  lowerdir="$(mount_lower_layers "$lower_source")"
+  mount_overlay_root "$lowerdir"
+  switch_to_real_root
+}
+
+main "$@"
