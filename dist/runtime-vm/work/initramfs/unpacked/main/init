@@ -2,9 +2,10 @@
 set -eu
 
 PATH=/sbin:/bin:/usr/sbin:/usr/bin
+RUNTIME_CDA_DIR="${CDA_RUNTIME_DIR:-/run/cda}"
 
 log() {
-  printf '[init-overlay] %s\n' "$*"
+  printf '[init-overlay] %s\n' "$*" >&2
 }
 
 panic() {
@@ -14,7 +15,7 @@ panic() {
 
 cmdline_get() {
   key="$1"
-  for arg in $(cat /proc/cmdline); do
+  for arg in $(cmdline_words); do
     case "$arg" in
       "$key"=*)
         printf '%s\n' "${arg#*=}"
@@ -25,11 +26,20 @@ cmdline_get() {
   return 1
 }
 
+cmdline_words() {
+  if [ -n "${CDA_CMDLINE:-}" ]; then
+    printf '%s\n' "$CDA_CMDLINE"
+  else
+    cat /proc/cmdline
+  fi
+}
+
 mount_api_fs() {
   mkdir -p /proc /sys /dev
   mount -t proc proc /proc 2>/dev/null || true
   mount -t sysfs sys /sys 2>/dev/null || true
   mount -t devtmpfs dev /dev 2>/dev/null || true
+  mount -t tmpfs tmpfs /run 2>/dev/null || true
 }
 
 find_mem_available_bytes() {
@@ -48,8 +58,62 @@ sum_squashfs_bytes() {
   echo "$total"
 }
 
+load_deployment_descriptor() {
+  deployment_root="$1"
+  deployment_name="$2"
+  descriptor="$deployment_root/deployment.conf"
+
+  DEPLOYMENT_NAME="$deployment_name"
+  DEPLOYMENT_VERSION="unknown"
+  DEPLOYMENT_IMAGE_DIR="images"
+  DEPLOYMENT_SLOT="$deployment_name"
+
+  if [ -r "$descriptor" ]; then
+    . "$descriptor"
+  fi
+
+  [ -n "${DEPLOYMENT_NAME:-}" ] || DEPLOYMENT_NAME="$deployment_name"
+  [ -n "${DEPLOYMENT_VERSION:-}" ] || DEPLOYMENT_VERSION="unknown"
+  [ -n "${DEPLOYMENT_IMAGE_DIR:-}" ] || DEPLOYMENT_IMAGE_DIR="images"
+  DEPLOYMENT_SLOT="$deployment_name"
+}
+
+resolve_deployment_source() {
+  deployment_dir="$(cmdline_get cda.deployment_dir || true)"
+  [ -n "$deployment_dir" ] || return 1
+
+  deployment_name="$(cmdline_get cda.deployment || true)"
+  [ -n "$deployment_name" ] || deployment_name=current
+
+  deployment_root="$deployment_dir/$deployment_name"
+  [ -d "$deployment_root" ] || return 1
+
+  load_deployment_descriptor "$deployment_root" "$deployment_name"
+
+  for candidate in \
+    "$deployment_root/$DEPLOYMENT_IMAGE_DIR" \
+    "$deployment_root/images" \
+    "$deployment_root/bootlayers" \
+    "$deployment_root"; do
+    [ -d "$candidate" ] || continue
+    DEPLOYMENT_SOURCE="$candidate"
+    printf '%s\n' "$candidate"
+    return 0
+  done
+
+  return 1
+}
+
 mount_boot_source() {
-  mkdir -p /run/cda/boot
+  mkdir -p "$RUNTIME_CDA_DIR/boot"
+
+  if resolve_deployment_source >/dev/null 2>&1; then
+    source_dir="$DEPLOYMENT_SOURCE"
+    log "deployment selecionado: ${DEPLOYMENT_NAME:-current} (${DEPLOYMENT_VERSION:-unknown})"
+    printf '%s\n' "$source_dir"
+    return 0
+  fi
+
   source_dir="$(cmdline_get cda.squashdir || true)"
   if [ -n "$source_dir" ] && [ -d "$source_dir" ]; then
     echo "$source_dir"
@@ -61,12 +125,12 @@ mount_boot_source() {
 
   for dev in "$live_dev" "$root_dev"; do
     [ -n "$dev" ] || continue
-    if mount -o ro "$dev" /run/cda/boot 2>/dev/null; then
+    if mount -o ro "$dev" "$RUNTIME_CDA_DIR/boot" 2>/dev/null; then
       inner="$(cmdline_get cda.squash_subdir || true)"
-      if [ -n "$inner" ] && [ -d "/run/cda/boot/$inner" ]; then
-        echo "/run/cda/boot/$inner"
+      if [ -n "$inner" ] && [ -d "$RUNTIME_CDA_DIR/boot/$inner" ]; then
+        echo "$RUNTIME_CDA_DIR/boot/$inner"
       else
-        echo "/run/cda/boot"
+        echo "$RUNTIME_CDA_DIR/boot"
       fi
       return 0
     fi
@@ -75,30 +139,39 @@ mount_boot_source() {
   panic "não foi possível montar o dispositivo com os arquivos .squashfs"
 }
 
+write_runtime_metadata() {
+  [ -n "${DEPLOYMENT_NAME:-}" ] || return 0
+
+  echo "$DEPLOYMENT_NAME" > "$RUNTIME_CDA_DIR/deployment-name"
+  echo "${DEPLOYMENT_VERSION:-unknown}" > "$RUNTIME_CDA_DIR/deployment-version"
+  echo "${DEPLOYMENT_SLOT:-$DEPLOYMENT_NAME}" > "$RUNTIME_CDA_DIR/deployment-slot"
+  [ -n "${DEPLOYMENT_SOURCE:-}" ] && echo "$DEPLOYMENT_SOURCE" > "$RUNTIME_CDA_DIR/deployment-source"
+}
+
 copy_images_to_ram() {
   src_dir="$1"
   total_bytes="$2"
-  mkdir -p /run/cda/images
+  mkdir -p "$RUNTIME_CDA_DIR/images"
   overhead=$((256 * 1024 * 1024))
   size=$((total_bytes + overhead))
-  mount -t tmpfs -o "size=$size" tmpfs /run/cda/images
+  mount -t tmpfs -o "size=$size" tmpfs "$RUNTIME_CDA_DIR/images"
   for img in "$src_dir"/*.squashfs; do
     [ -f "$img" ] || continue
-    cp -f "$img" /run/cda/images/
+    cp -f "$img" "$RUNTIME_CDA_DIR/images/"
   done
-  echo /run/cda/images
+  echo "$RUNTIME_CDA_DIR/images"
 }
 
 mount_lower_layers() {
   src_dir="$1"
-  mkdir -p /run/cda/lower
+  mkdir -p "$RUNTIME_CDA_DIR/lower"
   i=0
   lowerdir=""
 
   for img in "$src_dir"/*.squashfs; do
     [ -f "$img" ] || continue
     i=$((i + 1))
-    layer="/run/cda/lower/$i"
+    layer="$RUNTIME_CDA_DIR/lower/$i"
     mkdir -p "$layer"
     mount -t squashfs -o loop,ro "$img" "$layer"
     if [ -z "$lowerdir" ]; then
@@ -114,17 +187,19 @@ mount_lower_layers() {
 
 mount_overlay_root() {
   lowerdir="$1"
-  mkdir -p /sysroot /run/cda/rw
-  mount -t tmpfs tmpfs /run/cda/rw
-  mkdir -p /run/cda/rw/upper /run/cda/rw/work
-  mount -t overlay overlay -o "lowerdir=$lowerdir,upperdir=/run/cda/rw/upper,workdir=/run/cda/rw/work" /sysroot
+  mkdir -p /sysroot "$RUNTIME_CDA_DIR/rw"
+  mount -t tmpfs tmpfs "$RUNTIME_CDA_DIR/rw"
+  mkdir -p "$RUNTIME_CDA_DIR/rw/upper" "$RUNTIME_CDA_DIR/rw/work"
+  mount -t overlay overlay -o "lowerdir=$lowerdir,upperdir=$RUNTIME_CDA_DIR/rw/upper,workdir=$RUNTIME_CDA_DIR/rw/work" /sysroot
 }
 
 switch_to_real_root() {
   mkdir -p /sysroot/proc /sysroot/sys /sysroot/dev /sysroot/run/cda
-  if [ -r /run/cda/boot-mode ]; then
-    cp /run/cda/boot-mode /sysroot/run/cda/boot-mode 2>/dev/null || true
-  fi
+  for meta in boot-mode deployment-name deployment-version deployment-slot deployment-source; do
+    if [ -r "$RUNTIME_CDA_DIR/$meta" ]; then
+      cp "$RUNTIME_CDA_DIR/$meta" "/sysroot/run/cda/$meta" 2>/dev/null || true
+    fi
+  done
   mount --move /proc /sysroot/proc || true
   mount --move /sys /sysroot/sys || true
   mount --move /dev /sysroot/dev || true
@@ -134,7 +209,7 @@ switch_to_real_root() {
 
 main() {
   mount_api_fs
-  mkdir -p /run/cda
+  mkdir -p "$RUNTIME_CDA_DIR"
 
   # Tenta habilitar suporte de kernel quando compilado como modulo.
   # Em kernels com suporte built-in, essas chamadas apenas falham silenciosamente.
@@ -148,7 +223,9 @@ main() {
   force_disk="$(cmdline_get cda.force_disk || true)"
   force_ram="$(cmdline_get cda.force_ram || true)"
 
-  squash_source="$(mount_boot_source)"
+  boot_source_file="$RUNTIME_CDA_DIR/boot-source"
+  mount_boot_source > "$boot_source_file"
+  squash_source="$(cat "$boot_source_file")"
   total_squash_bytes="$(sum_squashfs_bytes "$squash_source")"
   mem_available_bytes="$(find_mem_available_bytes)"
   mem_available_mib=$((mem_available_bytes / 1024 / 1024))
@@ -166,7 +243,8 @@ main() {
   fi
 
   log "modo de boot: $mode (MemAvailable=${mem_available_mib}MiB, squashfs=$((total_squash_bytes / 1024 / 1024))MiB)"
-  echo "$mode" > /run/cda/boot-mode
+  echo "$mode" > "$RUNTIME_CDA_DIR/boot-mode"
+  write_runtime_metadata
 
   if [ "$mode" = "ram" ]; then
     lower_source="$(copy_images_to_ram "$squash_source" "$total_squash_bytes")"
@@ -179,4 +257,6 @@ main() {
   switch_to_real_root
 }
 
-main "$@"
+if [ "${CDA_INIT_OVERLAY_LIB_ONLY:-0}" != 1 ]; then
+  main "$@"
+fi

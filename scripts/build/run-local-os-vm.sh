@@ -45,6 +45,12 @@ mount -t tmpfs tmpfs /tmp || true
 MODE="unknown"
 [ -r /run/cda/boot-mode ] && MODE="$(cat /run/cda/boot-mode)"
 KERNEL="$(uname -r)"
+DEPLOYMENT_NAME="current"
+[ -r /run/cda/deployment-name ] && DEPLOYMENT_NAME="$(cat /run/cda/deployment-name)"
+DEPLOYMENT_SLOT="current"
+[ -r /run/cda/deployment-slot ] && DEPLOYMENT_SLOT="$(cat /run/cda/deployment-slot)"
+DEPLOYMENT_VERSION="unknown"
+[ -r /run/cda/deployment-version ] && DEPLOYMENT_VERSION="$(cat /run/cda/deployment-version)"
 
 ip link set lo up || true
 for netdev in /sys/class/net/*; do
@@ -247,6 +253,16 @@ cat > /www/index.html <<'HTML'
     .card-body,
     .window-body {
       padding: 15px;
+    }
+
+    .window-head {
+      cursor: grab;
+      user-select: none;
+      touch-action: none;
+    }
+
+    .window-head:active {
+      cursor: grabbing;
     }
 
     .tag {
@@ -514,6 +530,8 @@ cat > /www/index.html <<'HTML'
       </div>
       <div class="hud-meta">
         <span class="hud-chip" id="boot-state">boot __MODE__</span>
+        <span class="hud-chip" id="deployment-slot">slot __DEPLOYMENT_SLOT__</span>
+        <span class="hud-chip" id="deployment-state">deployment __DEPLOYMENT_NAME__ @ __DEPLOYMENT_VERSION__</span>
         <span class="hud-chip">kernel __KERNEL__</span>
         <span class="hud-chip" id="clock">--:--:--</span>
       </div>
@@ -562,6 +580,9 @@ cat > /www/index.html <<'HTML'
             <div class="window-body">
               <div class="metrics">
                 <div class="metric"><label>Boot mode</label><strong>__MODE__</strong></div>
+                <div class="metric"><label>Slot</label><strong>__DEPLOYMENT_SLOT__</strong></div>
+                <div class="metric"><label>Deployment</label><strong>__DEPLOYMENT_NAME__</strong></div>
+                <div class="metric"><label>Release</label><strong>__DEPLOYMENT_VERSION__</strong></div>
                 <div class="metric"><label>Kernel</label><strong>__KERNEL__</strong></div>
                 <div class="metric"><label>Origem</label><strong>QEMU + initramfs OverlayFS</strong></div>
                 <div class="metric"><label>Canal</label><strong>Live local em VM</strong></div>
@@ -577,6 +598,15 @@ Linux __KERNEL__
 
 cda@localhost:~$ cat /run/cda/boot-mode
 __MODE__
+
+cda@localhost:~$ cat /run/cda/deployment-name
+__DEPLOYMENT_NAME__
+
+cda@localhost:~$ cat /run/cda/deployment-version
+__DEPLOYMENT_VERSION__
+
+cda@localhost:~$ cat /run/cda/deployment-slot
+__DEPLOYMENT_SLOT__
 
 cda@localhost:~$ mount | grep overlay
 overlay on /sysroot type overlay (rw,relatime,...)
@@ -626,6 +656,8 @@ www/
           <div class="right-stack">
             <div class="status-pill"><span class="dot"></span><span>SO em execucao dentro da VM</span></div>
             <div class="metric"><label>Servico</label><strong>host 10080 -> guest 8080</strong></div>
+            <div class="metric"><label>Slot</label><strong>__DEPLOYMENT_SLOT__</strong></div>
+            <div class="metric"><label>Deployment</label><strong>__DEPLOYMENT_NAME__ @ __DEPLOYMENT_VERSION__</strong></div>
             <div class="metric"><label>Pipeline</label><strong>squashfs + initramfs + overlay</strong></div>
             <div class="metric"><label>Objetivo</label><strong>sistema academico de ciencia de dados</strong></div>
           </div>
@@ -646,7 +678,91 @@ www/
 
   <script>
     const windows = Array.from(document.querySelectorAll('.window'));
+    const stage = document.querySelector('.stage-grid');
     let order = 20;
+    let dragState = null;
+
+    function clamp(value, min, max) {
+      return Math.min(Math.max(value, min), max);
+    }
+
+    function getStageMetrics() {
+      if (!stage) return null;
+
+      const rect = stage.getBoundingClientRect();
+      const style = window.getComputedStyle(stage);
+      const paddingLeft = parseFloat(style.paddingLeft) || 0;
+      const paddingTop = parseFloat(style.paddingTop) || 0;
+      const paddingRight = parseFloat(style.paddingRight) || 0;
+      const paddingBottom = parseFloat(style.paddingBottom) || 0;
+
+      return {
+        originLeft: rect.left + paddingLeft,
+        originTop: rect.top + paddingTop,
+        width: rect.width - paddingLeft - paddingRight,
+        height: rect.height - paddingTop - paddingBottom,
+      };
+    }
+
+    function startDrag(windowEl, pointerEvent) {
+      if (!stage || pointerEvent.button !== 0) return;
+
+      const metrics = getStageMetrics();
+      if (!metrics) return;
+
+      const rect = windowEl.getBoundingClientRect();
+
+      bringToFront(windowEl);
+      windowEl.classList.add('dragging');
+      windowEl.style.transition = 'none';
+      windowEl.style.right = 'auto';
+      windowEl.style.bottom = 'auto';
+      windowEl.style.left = `${rect.left - metrics.originLeft}px`;
+      windowEl.style.top = `${rect.top - metrics.originTop}px`;
+
+      dragState = {
+        windowEl,
+        offsetX: pointerEvent.clientX - rect.left,
+        offsetY: pointerEvent.clientY - rect.top,
+      };
+
+      if (windowEl.setPointerCapture) {
+        windowEl.setPointerCapture(pointerEvent.pointerId);
+      }
+
+      pointerEvent.preventDefault();
+    }
+
+    function moveDrag(pointerEvent) {
+      if (!dragState) return;
+
+      const metrics = getStageMetrics();
+      if (!metrics) return;
+
+      const rect = dragState.windowEl.getBoundingClientRect();
+      const maxLeft = Math.max(0, metrics.width - rect.width);
+      const maxTop = Math.max(0, metrics.height - rect.height);
+
+      const nextLeft = clamp(pointerEvent.clientX - metrics.originLeft - dragState.offsetX, 0, maxLeft);
+      const nextTop = clamp(pointerEvent.clientY - metrics.originTop - dragState.offsetY, 0, maxTop);
+
+      dragState.windowEl.style.left = `${nextLeft}px`;
+      dragState.windowEl.style.top = `${nextTop}px`;
+    }
+
+    function stopDrag() {
+      if (!dragState) return;
+
+      dragState.windowEl.classList.remove('dragging');
+      dragState.windowEl.style.transition = '';
+      dragState = null;
+    }
+
+    if (stage) {
+      document.addEventListener('pointermove', moveDrag);
+      document.addEventListener('pointerup', stopDrag);
+      document.addEventListener('pointercancel', stopDrag);
+    }
 
     function setClock() {
       const now = new Date();
@@ -674,6 +790,14 @@ www/
     });
 
     windows.forEach((windowEl, index) => {
+      const head = windowEl.querySelector('.window-head');
+
+      if (head) {
+        head.addEventListener('pointerdown', (pointerEvent) => {
+          startDrag(windowEl, pointerEvent);
+        });
+      }
+
       windowEl.addEventListener('click', () => bringToFront(windowEl));
       windowEl.style.zIndex = String(20 + index);
     });
@@ -692,7 +816,7 @@ www/
 </html>
 HTML
 
-sed -i "s|__MODE__|$MODE|g; s|__KERNEL__|$KERNEL|g" /www/index.html
+  sed -i "s|__MODE__|$MODE|g; s|__KERNEL__|$KERNEL|g; s|__DEPLOYMENT_NAME__|$DEPLOYMENT_NAME|g; s|__DEPLOYMENT_VERSION__|$DEPLOYMENT_VERSION|g; s|__DEPLOYMENT_SLOT__|$DEPLOYMENT_SLOT|g" /www/index.html
 
 exec /bin/httpd -f -p 8080 -h /www
 INIT
@@ -717,6 +841,15 @@ cp "$ROOT_DIR/initramfs/init-overlay.sh" "$INITRAMFS_MAIN/init"
 chmod +x "$INITRAMFS_MAIN/init"
 mkdir -p "$INITRAMFS_MAIN/bootlayers"
 cp "$BASE_SQUASH" "$INITRAMFS_MAIN/bootlayers/base.squashfs"
+mkdir -p "$INITRAMFS_MAIN/bootlayers/deployments/base/images"
+cp "$BASE_SQUASH" "$INITRAMFS_MAIN/bootlayers/deployments/base/images/base.squashfs"
+cat > "$INITRAMFS_MAIN/bootlayers/deployments/base/deployment.conf" <<'EOF'
+DEPLOYMENT_NAME=base
+DEPLOYMENT_VERSION=local-vm
+DEPLOYMENT_IMAGE_DIR=images
+DEPLOYMENT_SLOT=base
+EOF
+ln -sfn base "$INITRAMFS_MAIN/bootlayers/deployments/current"
 
 for module_path in \
   "/lib/modules/$KERNEL_VER/kernel/fs/overlayfs/overlay.ko.zst" \
@@ -751,7 +884,7 @@ qemu-system-x86_64 \
   -smp 2 \
   -kernel "$KERNEL_IMAGE" \
   -initrd "$RUNTIME_DIR/initramfs.cpio.gz" \
-  -append "console=ttyS0 cda.squashdir=/bootlayers cda.force_ram=1" \
+  -append "console=ttyS0 cda.squashdir=/bootlayers cda.deployment_dir=/bootlayers/deployments cda.deployment=current cda.force_ram=1" \
   -nic user,model=virtio-net-pci,hostfwd=tcp::10080-:8080 \
   -nographic > "$LOG_FILE" 2>&1 &
 

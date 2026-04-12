@@ -12,6 +12,7 @@ mkdir -p "$ROOTFS_DIR" "$INITRAMFS_DIR"
 # Layout base de filesystem para imagem raiz.
 mkdir -p \
   "$ROOTFS_DIR"/boot \
+  "$ROOTFS_DIR"/boot/deployments/base/images \
   "$ROOTFS_DIR"/bin \
   "$ROOTFS_DIR"/sbin \
   "$ROOTFS_DIR"/etc/systemd/system \
@@ -31,6 +32,19 @@ cp "$ROOT_DIR/avahi/services/cda-data-services.service" "$ROOTFS_DIR/etc/avahi/s
 cp "$ROOT_DIR/CLAUDE.MD" "$ROOTFS_DIR/usr/share/cda/CLAUDE.MD"
 chmod +x "$ROOTFS_DIR/usr/local/sbin/cda-mesh-setup.sh"
 
+cat > "$ROOTFS_DIR/boot/deployments/base/deployment.conf" <<'EOF'
+DEPLOYMENT_NAME=base
+DEPLOYMENT_VERSION=distribution-template
+DEPLOYMENT_IMAGE_DIR=images
+DEPLOYMENT_SLOT=base
+EOF
+
+cat > "$ROOTFS_DIR/boot/deployments/base/images/README.txt" <<'EOF'
+Coloque aqui os artefatos .squashfs do deployment base para o pipeline de boot imutavel.
+EOF
+
+ln -sfn base "$ROOTFS_DIR/boot/deployments/current"
+
 # Estrutura de initramfs separada com init de overlay.
 cp "$ROOT_DIR/initramfs/init-overlay.sh" "$INITRAMFS_DIR/init"
 chmod +x "$INITRAMFS_DIR/init"
@@ -40,6 +54,7 @@ CDA_Unifei - Artefatos de distribuicao
 
 Conteudo:
 - cda-rootfs/: raiz do sistema para imagem Linux academica
+- cda-rootfs/boot/deployments/: layout inicial de deployments e slots de boot
 - initramfs/init: script de init para boot com OverlayFS e squashfs
 - cda-rootfs.tar.gz: pacote da raiz do sistema
 - initramfs.tar.gz: pacote do initramfs

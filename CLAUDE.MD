@@ -25,6 +25,8 @@ Projeto de infraestrutura para ambiente academico de Ciencia de Dados com:
 
 - `initramfs/`
   - `init-overlay.sh`: init do boot live com politica RAM x disco.
+- `boot/deployments/`
+  - `base/`: slot inicial com deployment.conf e dir de imagens.
 - `scripts/mesh/`
   - `cda-mesh-setup.sh`: sobe malha L2 e interface batman.
 - `systemd/`
@@ -46,6 +48,8 @@ Projeto de infraestrutura para ambiente academico de Ciencia de Dados com:
 - `cda.live_dev=/dev/...`
 - `cda.squashdir=/path`
 - `cda.squash_subdir=...`
+- `cda.deployment_dir=/path`
+- `cda.deployment=slot-ou-current`
 - `root=/dev/...` (fallback de origem)
 
 ### 4.2 Ambiente (mesh)
@@ -70,9 +74,11 @@ Projeto de infraestrutura para ambiente academico de Ciencia de Dados com:
 
 - `init-overlay.sh`
   - montar FS basicos (`proc`, `sys`, `dev`)
+  - resolver deployment descriptors e selecionar slot de boot
   - localizar origem dos `.squashfs`
   - decidir modo de boot (`ram`/`disk`) com politica explicita
   - montar lower layers + overlay rw e transferir controle via `switch_root`
+  - persistir metadata do deployment selecionado em `/run/cda/`
 
 - `cda-mesh-setup.sh`
   - garantir dependencias de rede
@@ -100,7 +106,12 @@ Projeto de infraestrutura para ambiente academico de Ciencia de Dados com:
 - interface de malha deve ficar funcional em `BAT_IFACE`
 - endereco IPv4 deve ser deterministico por `machine-id` no range configurado.
 
-3. Contrato de teste de integracao:
+3. Contrato de deployment:
+- `cda.deployment_dir` aponta para o layout de slots.
+- `cda.deployment` seleciona o slot corrente; padrao `current`.
+- cada slot deve expor `deployment.conf` e um subdir de imagens `.squashfs`.
+
+4. Contrato de teste de integracao:
 - alteracoes na politica de boot devem refletir em `mesh-lab.sh`
 - alteracoes na configuracao de rede devem manter validacao de conectividade Dask.
 
@@ -109,6 +120,7 @@ Projeto de infraestrutura para ambiente academico de Ciencia de Dados com:
 - Monorepo unico para visibilidade transversal de boot, rede, servicos e testes.
 - Scripts em shell para reduzir dependencia de runtime no ambiente base.
 - Teste de integracao E2E com QEMU como gate para regressao operacional.
+- O primeiro degrau de rollout passa por deployment descriptors nomeados antes de qualquer migracao para OSTree.
 
 ## 8) Politica de Desenvolvimento (Akita Way)
 
@@ -135,6 +147,9 @@ Projeto de infraestrutura para ambiente academico de Ciencia de Dados com:
 
 - Risco: dependencias externas ausentes no host (qemu, iw, batman-adv).
   - Mitigacao: preflight checks e documentacao de requisitos por ambiente.
+
+- Risco: contrato de deployment quebrar o boot se slot/current nao existir.
+  - Mitigacao: fallback para `cda.squashdir` e teste unitario de selecao de deployment.
 
 ## 11) Rollback Padrao
 
