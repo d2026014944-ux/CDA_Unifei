@@ -1,15 +1,33 @@
 [Unit]
 Description=Configura rede mesh CDA com batman-adv
+Documentation=https://github.com/CDA-Unifei/CDA_Unifei
 Wants=network-pre.target
 After=systemd-modules-load.service network-pre.target
 Before=network.target
 
 [Service]
 Type=oneshot
+RemainAfterExit=yes
+
 Environment=MESH_IFACE=wlan0
 Environment=MESH_ID=CDA-Mesh
+Environment=BAT_IFACE=bat0
+Environment=MESH_CHANNEL=2412
+
 ExecStart=/usr/local/sbin/cda-mesh-setup.sh
-RemainAfterExit=yes
+
+# Watchdog: reinicia o servico em caso de falha na malha.
+Restart=on-failure
+RestartSec=5s
+WatchdogSec=30s
+
+# Isolamento de recursos: impedir que falha de rede afete processos de dados.
+Slice=cda-compute.slice
+
+# Logging estruturado para consumo pela CDA OS Dashboard.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cda-mesh
 
 [Install]
 WantedBy=multi-user.target

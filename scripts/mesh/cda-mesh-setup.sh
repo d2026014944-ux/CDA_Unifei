@@ -51,6 +51,15 @@ main() {
   ip addr add "$node_ip" dev "$BAT_IFACE" 2>/dev/null || true
   ip link set "$BAT_IFACE" up
 
+  # Batman-adv performance tuning for high-throughput Dask workloads.
+  if command -v batctl >/dev/null 2>&1; then
+    batctl meshif "$BAT_IFACE" gw_mode client 2>/dev/null || true
+    batctl meshif "$BAT_IFACE" multicast_fanout 8 2>/dev/null || true
+    batctl meshif "$BAT_IFACE" network_coding 1 2>/dev/null || true
+    batctl meshif "$BAT_IFACE" orig_interval 500 2>/dev/null || true
+    log "batman-adv tuning aplicado (gw_mode=client, multicast_fanout=8, nc=1)"
+  fi
+
   log "mesh ativa em $MESH_IFACE -> $BAT_IFACE ($MESH_ID, $node_ip)"
 }
 

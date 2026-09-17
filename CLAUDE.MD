@@ -37,6 +37,17 @@ Projeto de infraestrutura para ambiente academico de Ciencia de Dados com:
   - `mesh-lab.sh`: homologacao fim-a-fim com 4 VMs.
 - `scripts/audit/`
   - `woof-clean-room-audit.sh`: verificacao de similaridade clean room.
+- `cda-center/`
+  - `index.html`: Dashboard CDA OS Control Center (HTML + CSS).
+  - `style.css`: Design System "CDA Linux Pro" (dark terminal theme).
+  - `dashboard.js`: Frontend que consome dados reais via CGI (polling 3s).
+  - `cgi-bin/sysinfo.cgi`: Info do sistema (/proc/meminfo, cpuinfo, stat, loadavg).
+  - `cgi-bin/processes.cgi`: Lista de processos (/proc/[pid]/stat, status, cmdline).
+  - `cgi-bin/network.cgi`: Interfaces, batman-adv peers, rotas (/sys/class/net, batctl).
+  - `cgi-bin/storage.cgi`: Montagens, df, overlay, block devices (/proc/mounts, /sys/block).
+  - `cgi-bin/logs.cgi`: Logs do sistema (dmesg, syslog, journalctl, /run/cda).
+  - `cgi-bin/services.cgi`: Controle de servicos systemd (whitelist).
+  - `cgi-bin/exec.cgi`: Terminal real com execucao de comandos (blocklist de seguranca).
 
 ## 4) Variaveis e Parametros
 
