@@ -18,6 +18,10 @@
 </p>
 
 <p align="center">
+  <a href="https://d2026014944-ux.github.io/CDA_Unifei/"><strong>🚀 Acessar CDA Center (Live Demo no Navegador) »</strong></a>
+</p>
+
+<p align="center">
   <a href="#-arquitetura">Arquitetura</a> •
   <a href="#-quick-start">Quick Start</a> •
   <a href="#-cda-center">CDA Center</a> •
