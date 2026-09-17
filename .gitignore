@@ -1,0 +1,34 @@
+# Sistema operacional
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editores/IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporários e logs
+*.tmp
+*.temp
+*.log
+
+# Ambientes locais
+.env
+.env.*
+
+# Arquivos sensíveis
+*.key
+*.pem
+*.p12
+secrets.*
+
+# Build artifacts locais
+dist/runtime-vm/
+*.qcow2
+*.pid
+
+# Agente AI (manter regras, ignorar cache)
+.agent/.shared/
