@@ -12,7 +12,7 @@ FAILED=0
 # - Termina com } ou ]
 # - Contém pelo menos uma chave entre aspas
 validate_json_structure() {
-  output="$1"
+  output="$(printf '%s' "$1" | tr -d '\r')"
   label="$2"
 
   # Remove o cabeçalho HTTP (Content-Type: ...) se presente
@@ -32,7 +32,7 @@ validate_json_structure() {
   fi
 
   # Verifica se começa com { ou [
-  first_char="$(printf '%s' "$body" | cut -c1)"
+  first_char="$(printf '%s' "$body" | head -n 1 | cut -c1)"
   case "$first_char" in
     '{'|'[') ;;
     *)

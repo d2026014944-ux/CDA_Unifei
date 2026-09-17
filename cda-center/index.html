@@ -73,6 +73,13 @@
         <span>Terminal</span>
       </a>
     </div>
+    <div class="sidebar-section">
+      <span class="sidebar-label">Diretório</span>
+      <a class="nav-item" data-page="institutional">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        <span>DACDA Docs</span>
+      </a>
+    </div>
   </nav>
 
   <!-- ═══════════ MAIN CONTENT ═══════════ -->
@@ -363,6 +370,110 @@ Execute: uname -a, cat /proc/meminfo, ip addr, batctl meshif bat0 originators, d
           <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
             <span style="font-family:var(--font-mono);font-size:0.82rem;color:var(--accent-primary);font-weight:700">$</span>
             <input type="text" id="term-input" placeholder="Digite um comando..." autocomplete="off" spellcheck="false" style="flex:1;background:var(--bg-input);border:1px solid var(--border-default);border-radius:var(--radius-sm);padding:10px 14px;font-family:var(--font-mono);font-size:0.82rem;color:var(--text-primary);outline:none;transition:border-color 0.2s">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ──── PAGE: Institutional (DACDA Docs) ──── -->
+    <section class="page-section" id="page-institutional">
+      <div class="page-header">
+        <h1 class="page-title">Diretório Acadêmico — DACDA UNIFEI</h1>
+        <p class="page-subtitle">Governança institucional, estatuto, transparência e base documental acadêmica</p>
+      </div>
+
+      <div class="grid-2col">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">📜 Estatuto &amp; Normas</span>
+            <span class="badge badge--green">Bases Normativas</span>
+          </div>
+          <div class="card-body">
+            <p style="color:var(--text-secondary);font-size:0.88rem;margin-bottom:14px">Minutas institucionais que regem a fundação, direitos estudantis e funcionamento colegiado do DACDA.</p>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div class="proc-card" style="padding:10px 14px">
+                <strong style="color:var(--text-primary);font-size:0.88rem">Estatuto Social</strong>
+                <span style="color:var(--text-muted);font-size:0.78rem">11 capítulos, 27 artigos — finalidades, assembleias e eleições</span>
+              </div>
+              <div class="proc-card" style="padding:10px 14px">
+                <strong style="color:var(--text-primary);font-size:0.88rem">Regimento Interno</strong>
+                <span style="color:var(--text-muted);font-size:0.78rem">Operação do dia a dia, divisão de pastas e transição</span>
+              </div>
+              <div class="proc-card" style="padding:10px 14px">
+                <strong style="color:var(--text-primary);font-size:0.88rem">Ata de Fundação</strong>
+                <span style="color:var(--text-muted);font-size:0.78rem">Modelo formal de ata de assembleia constitutiva</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">🎯 Planejamento &amp; Metas</span>
+            <span class="badge badge--cyan">Gestão Ativa</span>
+          </div>
+          <div class="card-body">
+            <p style="color:var(--text-secondary);font-size:0.88rem;margin-bottom:14px">Eixos estratégicos de atuação para desenvolvimento acadêmico, eventos e parcerias.</p>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div class="proc-card" style="padding:10px 14px">
+                <strong style="color:var(--text-primary);font-size:0.88rem">Plano de Ação (7 Eixos)</strong>
+                <span style="color:var(--text-muted);font-size:0.78rem">Formalização, representação, comunicação, integração e eventos</span>
+              </div>
+              <div class="proc-card" style="padding:10px 14px">
+                <strong style="color:var(--text-primary);font-size:0.88rem">Cronograma de Marcos</strong>
+                <span style="color:var(--text-muted);font-size:0.78rem">Semanas 1-4, Mês 2, Mês 3 e ciclos contínuos de governança</span>
+              </div>
+              <div class="proc-card" style="padding:10px 14px">
+                <strong style="color:var(--text-primary);font-size:0.88rem">Metas e Indicadores (KPIs)</strong>
+                <span style="color:var(--text-muted);font-size:0.78rem">100% de transparência financeira, SLA de respostas aos alunos</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2col mt-xl">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">🔍 Transparência &amp; Compliance</span>
+            <span class="badge badge--amber">Prestação de Contas</span>
+          </div>
+          <div class="card-body">
+            <p style="color:var(--text-secondary);font-size:0.88rem;margin-bottom:14px">Compromisso com prestação periódica de contas e rigorosa proteção de dados pessoais.</p>
+            <ul style="color:var(--text-secondary);font-size:0.84rem;line-height:1.8;padding-left:18px">
+              <li>Balancetes e relatórios semestrais com comprovação fiscal</li>
+              <li>Aprovação prévia pelo Conselho Fiscal</li>
+              <li>Anonimização estrita em conformidade com a LGPD</li>
+              <li>Vedação expressa de conflitos de interesse</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">📡 CDA OS — Cluster Acadêmico</span>
+            <span class="badge badge--green">Projeto Técnico</span>
+          </div>
+          <div class="card-body">
+            <p style="color:var(--text-secondary);font-size:0.88rem;margin-bottom:14px">Infraestrutura computacional mantida pelo diretório para aulas práticas e pesquisas em ciência de dados.</p>
+            <div class="metrics-grid">
+              <div class="metric-item">
+                <span class="metric-val" style="color:var(--accent-primary)">batman-adv</span>
+                <span class="metric-lbl">Rede Mesh L2</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-val" style="color:var(--accent-cyan)">OverlayFS</span>
+                <span class="metric-lbl">Boot Imutável</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-val" style="color:var(--accent-amber)">Dask + Jupyter</span>
+                <span class="metric-lbl">Computação</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-val" style="color:var(--accent-green)">Avahi mDNS</span>
+                <span class="metric-lbl">Zero-Conf</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
