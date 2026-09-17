@@ -1,0 +1,182 @@
+name: CI — CDA_Unifei
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # ─────────────────────────────────────────────
+  # Job 1: ShellCheck — Lint de todos os scripts
+  # ─────────────────────────────────────────────
+  shellcheck:
+    name: ShellCheck Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Executar ShellCheck nos scripts .sh
+        run: |
+          echo "=== ShellCheck: scripts Shell ==="
+          FAILED=0
+          for script in $(find . -name '*.sh' -not -path './.git/*' -not -path './.agent/*'); do
+            echo "--- Verificando: $script ---"
+            if ! shellcheck -e SC1091,SC2034,SC2086 -s sh "$script"; then
+              FAILED=1
+            fi
+          done
+          exit $FAILED
+
+      - name: Executar ShellCheck nos CGI scripts
+        run: |
+          echo "=== ShellCheck: CGI scripts ==="
+          FAILED=0
+          for script in $(find cda-center/cgi-bin -name '*.cgi' 2>/dev/null); do
+            echo "--- Verificando: $script ---"
+            if ! shellcheck -e SC1091,SC2034,SC2086 -s sh "$script"; then
+              FAILED=1
+            fi
+          done
+          exit $FAILED
+
+  # ─────────────────────────────────────────────
+  # Job 2: Testes unitários
+  # ─────────────────────────────────────────────
+  unit-tests:
+    name: Testes Unitários
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Executar testes unitários
+        run: |
+          echo "=== Suite de Testes Unitários ==="
+          FAILED=0
+          for test in $(find tests/unit -name 'test-*.sh' 2>/dev/null); do
+            echo "--- Executando: $test ---"
+            chmod +x "$test"
+            if ! sh "$test"; then
+              echo "[FAIL] $test"
+              FAILED=1
+            else
+              echo "[PASS] $test"
+            fi
+          done
+          if [ $FAILED -ne 0 ]; then
+            echo "::error::Alguns testes falharam"
+            exit 1
+          fi
+          echo "=== Todos os testes passaram ==="
+
+  # ─────────────────────────────────────────────
+  # Job 3: Validação de links Markdown
+  # ─────────────────────────────────────────────
+  markdown-links:
+    name: Validação de Links Markdown
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verificar links relativos nos documentos
+        run: |
+          echo "=== Verificação de Links Markdown ==="
+          FAILED=0
+
+          for md in $(find . -name '*.md' -not -path './.git/*' -not -path './.agent/*' -not -path './node_modules/*'); do
+            # Extrai links relativos do formato [texto](caminho)
+            # Ignora links http/https, mailto, #anchors
+            links=$(grep -oP '\]\(\K[^)]+' "$md" 2>/dev/null | grep -v '^http' | grep -v '^mailto' | grep -v '^#' || true)
+
+            dir=$(dirname "$md")
+            for link in $links; do
+              # Remove âncoras (#) do final do link
+              clean_link=$(echo "$link" | sed 's/#.*//')
+              [ -z "$clean_link" ] && continue
+
+              target="$dir/$clean_link"
+              if [ ! -e "$target" ]; then
+                echo "::warning file=$md::Link quebrado: $link -> $target"
+                FAILED=1
+              fi
+            done
+          done
+
+          if [ $FAILED -ne 0 ]; then
+            echo "::error::Links quebrados encontrados"
+            exit 1
+          fi
+          echo "=== Todos os links estão íntegros ==="
+
+  # ─────────────────────────────────────────────
+  # Job 4: Verificação LGPD
+  # ─────────────────────────────────────────────
+  lgpd-check:
+    name: Verificação LGPD
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Varredura de dados pessoais sensíveis
+        run: |
+          echo "=== Verificação LGPD — Dados Sensíveis ==="
+          FAILED=0
+
+          # Padrões de dados pessoais brasileiros
+          # CPF: 000.000.000-00 ou 00000000000
+          # RG: vários formatos
+          # Telefone: (00) 00000-0000 ou +55...
+          # E-mail pessoal em contexto de ata/lista
+          # Conta bancária: Ag/CC patterns
+
+          for md in $(find documentos/ -name '*.md' 2>/dev/null); do
+            # CPF (formato com pontuação)
+            if grep -Pn '\b\d{3}\.\d{3}\.\d{3}-\d{2}\b' "$md" 2>/dev/null; then
+              echo "::error file=$md::POSSÍVEL CPF DETECTADO"
+              FAILED=1
+            fi
+
+            # CPF (formato sem pontuação — 11 dígitos consecutivos)
+            if grep -Pn '(?<!\d)\d{11}(?!\d)' "$md" 2>/dev/null; then
+              echo "::warning file=$md::Sequência de 11 dígitos (possível CPF sem formatação)"
+            fi
+
+            # Telefone brasileiro
+            if grep -Pn '\(\d{2}\)\s*\d{4,5}-\d{4}' "$md" 2>/dev/null; then
+              echo "::error file=$md::POSSÍVEL TELEFONE DETECTADO"
+              FAILED=1
+            fi
+
+            # Conta bancária (Ag: / CC: / Conta: seguido de números)
+            if grep -Pin '(ag[eê]ncia|conta[- ]corrente|cc)\s*:?\s*\d{3,}' "$md" 2>/dev/null; then
+              echo "::error file=$md::POSSÍVEL DADO BANCÁRIO DETECTADO"
+              FAILED=1
+            fi
+          done
+
+          if [ $FAILED -ne 0 ]; then
+            echo "::error::Dados pessoais detectados nos documentos! Revise e anonimize antes do merge."
+            exit 1
+          fi
+          echo "=== Nenhum dado pessoal sensível detectado ==="
+
+  # ─────────────────────────────────────────────
+  # Job 5: Auditoria Clean Room (quando Woof-CE disponível)
+  # ─────────────────────────────────────────────
+  clean-room-audit:
+    name: Auditoria Clean Room
+    runs-on: ubuntu-latest
+    if: false  # Ativar quando repositório Woof-CE estiver configurado como input
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Executar auditoria de similaridade
+        run: |
+          chmod +x scripts/audit/woof-clean-room-audit.sh
+          ./scripts/audit/woof-clean-room-audit.sh . "$WOOF_CE_DIR"

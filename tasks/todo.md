@@ -16,8 +16,14 @@
 - [x] Backend cda-mesh-setup.sh — Tuning batman-adv
 - [x] CLAUDE.MD atualizado com nova estrutura
 - [x] tasks/lessons.md criado
+- [x] Integracao dacda-documentos — Governanca institucional em documentos/
+- [x] CI/CD GitHub Actions — ShellCheck, testes, links Markdown, LGPD
+- [x] Ficha tecnica CDA OS — documentos/projetos/cda-os-cluster.md
+- [x] Teste: verificar que o terminal (exec.cgi) bloqueia comandos destrutivos
+- [x] Teste: validar que todos os CGI scripts retornam JSON valido
 
 ## Pendente
-- [ ] Teste E2E: rodar VM e verificar que CGI retorna JSON valido
-- [ ] Teste: verificar que o terminal (exec.cgi) bloqueia comandos destrutivos
+- [ ] Teste E2E: rodar VM e verificar que CGI retorna JSON valido em ambiente real
 - [ ] Adicionar mais servicos na whitelist de services.cgi conforme necessario
+- [ ] Portal de documentacao GitHub Pages (Docsify ou MkDocs)
+- [ ] Aba institucional no CDA Center (visualizador offline de documentos DACDA)
