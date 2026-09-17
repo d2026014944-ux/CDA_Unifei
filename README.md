@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".github/assets/banner.jpg" alt="CDA OS — Distributed Academic Computing" width="100%" />
+  <img src="assets/banner.jpg" alt="CDA OS — Distributed Academic Computing" width="100%" />
 </p>
 
 <h1 align="center">CDA OS</h1>

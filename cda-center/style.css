@@ -286,6 +286,20 @@ body {
   animation: pulse-dot 2s ease-in-out infinite;
 }
 
+.topbar-chip--preview {
+  border-color: rgba(34, 211, 238, 0.4);
+  color: var(--accent-cyan);
+}
+
+.topbar-chip--preview::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-cyan);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
 .topbar-clock {
   font-family: var(--font-mono);
   font-weight: 600;

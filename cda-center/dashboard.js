@@ -43,7 +43,104 @@
   updateClock();
   setInterval(updateClock, 1000);
 
-  // ─── API Fetch Helper ───────────────────────────────────────
+  // ─── Telemetry Provider (Live CGI or Showcase Preview) ───────
+  const DEMO_DATA = {
+    'sysinfo.cgi': () => ({
+      hostname: 'cda-node-01',
+      kernel: '6.6.137-cda-l2mesh',
+      arch: 'x86_64',
+      uptime: '1d 08h 42m',
+      uptime_sec: 117720,
+      load: { '1m': (0.35 + Math.random() * 0.08).toFixed(2), '5m': '0.42', '15m': '0.38' },
+      memory: {
+        total_mib: 8192,
+        used_mib: Math.floor(3400 + Math.random() * 120),
+        available_mib: 4792,
+        buffers_mib: 320,
+        cached_mib: 1840,
+        pct: Math.floor(41 + Math.random() * 3)
+      },
+      swap: { total_kb: 2097152, free_kb: 2097152 },
+      cpu: { model: 'AMD Ryzen 7 / Intel Core i7 (4 vCPU)', cores: 4, pct: Math.floor(18 + Math.random() * 10) },
+      boot: { mode: 'ram', deployment_name: 'cda-academic', deployment_version: '2026.09', deployment_slot: 'current' },
+      processes: 68
+    }),
+    'processes.cgi': () => [
+      { pid: 1420, name: 'dask-worker', state: 'R', ppid: 1, uid: 1000, threads: 8, cpu_pct: 14, mem_pct: 12, rss: '980M', rss_kb: 1003520, cmdline: 'python3 -m distributed.cli.dask_worker tcp://10.42.0.25:8786' },
+      { pid: 1380, name: 'jupyter-lab', state: 'S', ppid: 1, uid: 1000, threads: 4, cpu_pct: 4, mem_pct: 6, rss: '490M', rss_kb: 501760, cmdline: 'jupyter-lab --ip=0.0.0.0 --port=8888 --no-browser' },
+      { pid: 980, name: 'batman-adv', state: 'S', ppid: 2, uid: 0, threads: 2, cpu_pct: 2, mem_pct: 1, rss: '45M', rss_kb: 46080, cmdline: '[kworker/batadv]' },
+      { pid: 1120, name: 'avahi-daemon', state: 'S', ppid: 1, uid: 104, threads: 1, cpu_pct: 0, mem_pct: 0, rss: '12M', rss_kb: 12288, cmdline: 'avahi-daemon: running [cda-node-01.local]' },
+      { pid: 1050, name: 'httpd', state: 'S', ppid: 1, uid: 0, threads: 1, cpu_pct: 1, mem_pct: 0, rss: '8M', rss_kb: 8192, cmdline: '/bin/httpd -f -p 8080 -h /www' },
+      { pid: 1, name: 'init', state: 'S', ppid: 0, uid: 0, threads: 1, cpu_pct: 0, mem_pct: 0, rss: '4M', rss_kb: 4096, cmdline: '/sbin/init' }
+    ],
+    'network.cgi': () => ({
+      interfaces: [
+        { name: 'bat0', state: 'up', mac: 'fe:42:0a:2a:00:19', mtu: 1500, ip: '10.42.0.25/24', rx: '48.2M', tx: '36.8M', rx_bytes: 50541363, tx_bytes: 38587596, rx_packets: 41200, tx_packets: 32800, rx_errors: 0, tx_errors: 0 },
+        { name: 'wlan0', state: 'up', mac: 'dc:a6:32:11:42:99', mtu: 1532, ip: '', rx: '52.1M', tx: '41.0M', rx_bytes: 54630809, tx_bytes: 42991616, rx_packets: 44500, tx_packets: 36100, rx_errors: 0, tx_errors: 0 },
+        { name: 'lo', state: 'up', mac: '00:00:00:00:00:00', mtu: 65536, ip: '127.0.0.1/8', rx: '12.4M', tx: '12.4M', rx_bytes: 13002342, tx_bytes: 13002342, rx_packets: 9800, tx_packets: 9800, rx_errors: 0, tx_errors: 0 }
+      ],
+      mesh: {
+        bat_iface: 'bat0',
+        gw_mode: 'client',
+        active_peers: 3,
+        peers: [
+          { originator: 'dc:a6:32:11:42:01', last_seen: '0.4s', tq: 255, nexthop: 'dc:a6:32:11:42:01', outif: 'wlan0' },
+          { originator: 'dc:a6:32:11:42:02', last_seen: '0.8s', tq: 242, nexthop: 'dc:a6:32:11:42:02', outif: 'wlan0' },
+          { originator: 'dc:a6:32:11:42:03', last_seen: '1.2s', tq: 228, nexthop: 'dc:a6:32:11:42:01', outif: 'wlan0' }
+        ]
+      },
+      routes: [
+        '10.42.0.0/24 dev bat0 proto kernel scope link src 10.42.0.25',
+        'default via 10.42.0.1 dev bat0 metric 100'
+      ],
+      dns: ['10.42.0.1', '1.1.1.1']
+    }),
+    'storage.cgi': () => ({
+      mounts: [
+        { device: 'overlay', mountpoint: '/', fstype: 'overlay', options: 'rw,relatime,lowerdir=/run/cda/lower/0,upperdir=/run/cda/rw/upper,workdir=/run/cda/rw/work' },
+        { device: 'tmpfs', mountpoint: '/run', fstype: 'tmpfs', options: 'rw,nosuid,nodev,mode=755' },
+        { device: '/dev/sda1', mountpoint: '/mnt/cda-data', fstype: 'ext4', options: 'rw,relatime' }
+      ],
+      disk_usage: [
+        { filesystem: 'overlay', mountpoint: '/', size: '4.0G', used: '520M', size_kb: 4194304, used_kb: 532480, avail_kb: 3661824, pct: 13 },
+        { filesystem: 'tmpfs', mountpoint: '/run/cda/images', size: '2.4G', used: '1.8G', size_kb: 2516582, used_kb: 1887436, avail_kb: 629146, pct: 75 },
+        { filesystem: '/dev/sda1', mountpoint: '/mnt/cda-data', size: '120G', used: '24G', size_kb: 125829120, used_kb: 25165824, avail_kb: 100663296, pct: 20 }
+      ],
+      overlay: {
+        lowerdir: '/run/cda/lower/0',
+        upperdir: '/run/cda/rw/upper',
+        workdir: '/run/cda/rw/work',
+        layers: 1,
+        upper_used_kb: 532480
+      },
+      block_devices: [
+        { name: 'sda', size: '128G', size_bytes: 137438953472, ro: 0, removable: 0 },
+        { name: 'sdb', size: '32G', size_bytes: 34359738368, ro: 0, removable: 1 }
+      ]
+    }),
+    'logs.cgi': () => ({
+      source: 'dmesg',
+      entries: [
+        { ts: '0.000000', level: 'info', msg: 'Linux version 6.6.137-cda-l2mesh (gcc 13.2.0) #1 SMP PREEMPT_DYNAMIC' },
+        { ts: '0.124800', level: 'info', msg: 'cda-init: MemAvailable=4792 MiB >= 4096 MiB threshold -> RAM BOOT ACTIVATED' },
+        { ts: '0.245100', level: 'info', msg: 'overlayfs: mounted lowerdir=/run/cda/lower/0 with upperdir in tmpfs' },
+        { ts: '1.450200', level: 'info', msg: 'batman-adv: bat0: Adding interface: wlan0 (802.11s mode mp)' },
+        { ts: '1.820100', level: 'info', msg: 'batman-adv: bat0: Interface activated: wlan0 with network coding enabled' },
+        { ts: '2.102300', level: 'info', msg: 'avahi-daemon: Service "cda-node-01 CDA Services" (_jupyter._tcp / _dask._tcp) registered.' },
+        { ts: '2.400100', level: 'info', msg: 'cda-httpd: listening on 0.0.0.0:8080 (CDA OS Control Center ready)' }
+      ]
+    }),
+    'services.cgi': () => ({
+      services: [
+        { unit: 'cda-batman-adv.service', load: 'loaded', active: 'active', sub: 'running', desc: 'Rede Mesh L2 batman-adv (Watchdog 30s)' },
+        { unit: 'avahi-daemon.service', load: 'loaded', active: 'active', sub: 'running', desc: 'Descoberta Zero-Conf mDNS/DNS-SD' },
+        { unit: 'dask-worker.service', load: 'loaded', active: 'active', sub: 'running', desc: 'Dask Distributed Compute Node' },
+        { unit: 'jupyter-lab.service', load: 'loaded', active: 'active', sub: 'running', desc: 'Ambiente Analítico Interativo Jupyter' },
+        { unit: 'httpd.service', load: 'loaded', active: 'active', sub: 'running', desc: 'BusyBox HTTP Server (porta 8080)' }
+      ]
+    })
+  };
+
   async function apiFetch(endpoint, params) {
     let url = API_BASE + '/' + endpoint;
     if (params) {
@@ -54,26 +151,28 @@
       const res = await fetch(url, { cache: 'no-store' });
       if (!res.ok) throw new Error(res.status);
       const data = await res.json();
-      if (!isLive) {
-        isLive = true;
-        updateConnectionStatus(true);
-      }
+      isLive = true;
+      updateConnectionStatus('live');
       return data;
     } catch (err) {
-      if (isLive) {
-        isLive = false;
-        updateConnectionStatus(false);
+      if (DEMO_DATA[endpoint]) {
+        updateConnectionStatus('preview');
+        return DEMO_DATA[endpoint]();
       }
+      updateConnectionStatus('offline');
       return null;
     }
   }
 
-  function updateConnectionStatus(online) {
+  function updateConnectionStatus(mode) {
     const chip = document.getElementById('sys-status');
     if (!chip) return;
-    if (online) {
+    if (mode === 'live') {
       chip.textContent = 'LIVE';
       chip.className = 'topbar-chip topbar-chip--live';
+    } else if (mode === 'preview') {
+      chip.textContent = 'DEMO PREVIEW';
+      chip.className = 'topbar-chip topbar-chip--preview';
     } else {
       chip.textContent = 'OFFLINE';
       chip.className = 'topbar-chip topbar-chip--offline';
@@ -355,7 +454,26 @@
         appendTerminal(`<span class="cmd-warn">[exit code: ${data.rc}]</span>\n`);
       }
     } catch (err) {
-      appendTerminal(`<span class="cmd-error">[fetch error: ${err.message}]</span>\n`);
+      const trimmed = cmd.trim();
+      if (trimmed.match(/rm\s+-rf|mkfs|dd\s+if=|shutdown|reboot|halt|poweroff|init\s+[06]/)) {
+        appendTerminal('<span class="cmd-error">blocked: destructive command not allowed from dashboard</span>\n<span class="cmd-warn">[exit code: 126]</span>\n');
+      } else if (trimmed === 'uname -a') {
+        appendTerminal('<span class="cmd-output">Linux cda-node-01 6.6.137-cda-l2mesh #1 SMP PREEMPT_DYNAMIC x86_64 GNU/Linux\n</span>');
+      } else if (trimmed === 'hostname') {
+        appendTerminal('<span class="cmd-output">cda-node-01\n</span>');
+      } else if (trimmed.includes('batctl')) {
+        appendTerminal('<span class="cmd-output">[B.A.T.M.A.N. adv 2024.1, meshif bat0]\nOriginator        last-seen (#/255) Nexthop           [outgoingIF]\ndc:a6:32:11:42:01    0.340s   (255) dc:a6:32:11:42:01 [     wlan0]\ndc:a6:32:11:42:02    0.820s   (242) dc:a6:32:11:42:02 [     wlan0]\ndc:a6:32:11:42:03    1.150s   (228) dc:a6:32:11:42:01 [     wlan0]\n</span>');
+      } else if (trimmed === 'df -h') {
+        appendTerminal('<span class="cmd-output">Filesystem      Size  Used Avail Use% Mounted on\noverlay         4.0G  520M  3.5G  13% /\ntmpfs           2.4G  1.8G  615M  75% /run/cda/images\n/dev/sda1       120G   24G   96G  20% /mnt/cda-data\n</span>');
+      } else if (trimmed.includes('cat /proc/meminfo')) {
+        appendTerminal('<span class="cmd-output">MemTotal:        8388608 kB\nMemFree:         2457600 kB\nMemAvailable:    4906800 kB\nBuffers:          327680 kB\nCached:          1884160 kB\n</span>');
+      } else if (trimmed === 'clear') {
+        termPre.innerHTML = '';
+      } else if (trimmed === 'help') {
+        appendTerminal('<span class="cmd-output">Comandos de demonstração disponíveis no modo Preview:\n  uname -a, hostname, batctl originators, df -h, cat /proc/meminfo, clear, help\n  Tente também um comando proibido (ex: rm -rf /) para ver a blocklist em ação.\n</span>');
+      } else {
+        appendTerminal(`<span class="cmd-output">[demo preview] comando '${escapeHtml(trimmed)}' executado (rc: 0)\n</span>`);
+      }
     }
   }
 
